@@ -1,0 +1,19 @@
+[package]
+name = "ringlet"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[dev-dependencies]
+murmur3 = "0.5.2"
+criterion = "0.8.2"
+
+[[bench]]
+name = "ring_bench"
+harness = false
+
+[profile.bench]
+opt-level = 0
+debug = true
+strip = false
