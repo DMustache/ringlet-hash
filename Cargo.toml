@@ -1,6 +1,6 @@
 [package]
 name = "ringlet-hash"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Dmitry Usakov"]
 description = "Consistent hashing with weighted nodes and cluster migration previews"
