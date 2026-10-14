@@ -1,0 +1,69 @@
+name: Coverage badges
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust coverage tools
+        run: |
+          rustup default stable
+          rustup component add llvm-tools-preview --toolchain stable
+          rustup toolchain install nightly --profile minimal
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Measure test line coverage
+        run: cargo llvm-cov --json --ignore-filename-regex 'tests/|benches/' --output-path coverage.json
+
+      - name: Test documentation examples
+        run: cargo test --doc
+
+      - name: Measure public API documentation coverage
+        env:
+          RUSTDOCFLAGS: -Z unstable-options --show-coverage --output-format json -D rustdoc::broken_intra_doc_links
+        run: cargo +nightly doc --no-deps
+
+      - name: Update README coverage values
+        run: python3 scripts/update_readme_coverage.py coverage.json target/doc/ringlet.json README.md README.updated.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: readme-coverage
+          path: README.updated.md
+
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs: measure
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: readme-coverage
+
+      - name: Commit refreshed badges
+        run: |
+          mv README.updated.md README.md
+          if git diff --quiet -- README.md; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md
+          git commit -m 'docs: refresh coverage badges'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
