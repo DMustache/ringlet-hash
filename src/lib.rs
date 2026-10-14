@@ -15,8 +15,8 @@
 //! # Example
 //!
 //! ```
-//! extern crate ringlet;
-//! use ringlet::{ConsistentRing, RingError, RingConfig};
+//! extern crate ringlet_hash;
+//! use ringlet_hash::{ConsistentRing, RingError, RingConfig};
 //! use std::hash::{BuildHasherDefault, DefaultHasher};
 //!
 //! let config = RingConfig {

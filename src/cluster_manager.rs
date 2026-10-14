@@ -16,7 +16,7 @@ use crate::{ConsistentRing, RingConfig, RingError, TokenRangeMigration};
 ///
 /// ```
 /// use std::hash::{BuildHasherDefault, DefaultHasher};
-/// use ringlet::{ClusterManager, RingConfig};
+/// use ringlet_hash::{ClusterManager, RingConfig};
 ///
 /// let mut cluster = ClusterManager::try_new(RingConfig {
 ///     virtual_node_base_count: 50,
@@ -32,7 +32,7 @@ use crate::{ConsistentRing, RingConfig, RingError, TokenRangeMigration};
 /// cluster.remove_node("a")?;
 /// assert_eq!(cluster.get_node(&"customer-42"), Some(&"server-b"));
 ///
-/// Ok::<(), ringlet::RingError>(())
+/// Ok::<(), ringlet_hash::RingError>(())
 /// ```
 #[derive(Clone)]
 pub struct ClusterManager<T, BH: BuildHasher> {

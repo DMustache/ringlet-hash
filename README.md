@@ -9,11 +9,17 @@ Ringlet is a consistent hashing library for assigning keys to physical nodes. It
 
 ## Quick start
 
+The crates.io package is `ringlet-hash`; Rust imports use `ringlet_hash`.
+
+```sh
+cargo add ringlet-hash
+```
+
 ```rust
 use std::hash::{BuildHasherDefault, DefaultHasher};
-use ringlet::{ClusterManager, RingConfig};
+use ringlet_hash::{ClusterManager, RingConfig};
 
-fn main() -> Result<(), ringlet::RingError> {
+fn main() -> Result<(), ringlet_hash::RingError> {
     let mut cluster = ClusterManager::try_new(RingConfig {
         virtual_node_base_count: 50,
         build_hasher: BuildHasherDefault::<DefaultHasher>::default(),

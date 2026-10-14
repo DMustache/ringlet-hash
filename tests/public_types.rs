@@ -1,6 +1,6 @@
 use std::hash::{BuildHasherDefault, DefaultHasher};
 
-use ringlet::{ConsistentRing, RingConfig, RingError, TokenRangeMigration};
+use ringlet_hash::{ConsistentRing, RingConfig, RingError, TokenRangeMigration};
 
 #[test]
 fn migration_exposes_its_range_and_endpoints() {

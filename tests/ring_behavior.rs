@@ -3,7 +3,7 @@ use std::{
     hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher},
 };
 
-use ringlet::{ConsistentRing, RingConfig};
+use ringlet_hash::{ConsistentRing, RingConfig};
 
 fn ring() -> ConsistentRing<&'static str, BuildHasherDefault<DefaultHasher>> {
     ConsistentRing::try_new(RingConfig {

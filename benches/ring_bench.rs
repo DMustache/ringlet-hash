@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use ringlet::{ConsistentRing, RingConfig};
+use ringlet_hash::{ConsistentRing, RingConfig};
 use std::{
     hash::{BuildHasherDefault, DefaultHasher},
     hint::black_box,

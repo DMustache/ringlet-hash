@@ -34,7 +34,7 @@ jobs:
         run: cargo +nightly doc --no-deps
 
       - name: Update README coverage values
-        run: python3 scripts/update_readme_coverage.py coverage.json target/doc/ringlet.json README.md README.updated.md
+        run: python3 scripts/update_readme_coverage.py coverage.json target/doc/ringlet_hash.json README.md README.updated.md
 
       - uses: actions/upload-artifact@v4
         with:

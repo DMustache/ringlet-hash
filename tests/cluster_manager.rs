@@ -1,6 +1,6 @@
 use std::hash::{BuildHasherDefault, DefaultHasher};
 
-use ringlet::{ClusterManager, RingConfig, RingError};
+use ringlet_hash::{ClusterManager, RingConfig, RingError};
 
 type TestManager = ClusterManager<&'static str, BuildHasherDefault<DefaultHasher>>;
 

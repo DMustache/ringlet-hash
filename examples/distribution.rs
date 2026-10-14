@@ -3,7 +3,7 @@ use std::{
     io::Cursor,
 };
 
-use ringlet::{ConsistentRing, RingConfig};
+use ringlet_hash::{ConsistentRing, RingConfig};
 
 #[derive(Clone)]
 pub struct Murmur3Adapter {

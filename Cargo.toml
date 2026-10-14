@@ -1,7 +1,12 @@
 [package]
-name = "ringlet"
+name = "ringlet-hash"
 version = "0.1.0"
 edition = "2024"
+authors = ["Dmitry Usakov"]
+description = "Consistent hashing with weighted nodes and cluster migration previews"
+repository = "https://github.com/DMustache/ringlet"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 

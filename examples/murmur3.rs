@@ -1,5 +1,5 @@
 use murmur3;
-use ringlet::{ConsistentRing, RingConfig};
+use ringlet_hash::{ConsistentRing, RingConfig};
 use std::hash::{BuildHasherDefault, Hasher};
 use std::io::Cursor;
 
