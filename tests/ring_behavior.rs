@@ -25,10 +25,18 @@ fn keys() -> impl Iterator<Item = u64> {
     0..2_000
 }
 
-fn hash(key: &str) -> u64 {
+fn hash<K: Hash + ?Sized>(key: &K) -> u64 {
     let mut hasher = DefaultHasher::new();
     key.hash(&mut hasher);
     hasher.finish()
+}
+
+fn in_range(hash: u64, start: u64, end: u64) -> bool {
+    if start < end {
+        hash > start && hash <= end
+    } else {
+        hash > start || hash <= end
+    }
 }
 
 #[test]
@@ -390,4 +398,81 @@ fn migration_preview_of_an_empty_ring_has_no_source() {
 fn migration_preview_for_zero_weight_is_empty() {
     let ring = populated_ring();
     assert!(ring.calculate_migration_on_add("delta", "d", 0).is_err());
+}
+
+#[test]
+fn remove_preview_on_an_empty_ring_has_no_ranges() {
+    assert!(ring().calculate_migration_on_remove("a").is_empty());
+}
+
+#[test]
+fn remove_preview_for_an_unknown_identifier_has_no_ranges() {
+    assert!(
+        populated_ring()
+            .calculate_migration_on_remove("missing")
+            .is_empty()
+    );
+}
+
+#[test]
+fn remove_preview_of_the_last_node_has_no_destination() {
+    let mut ring = ring();
+    ring.add_node("alpha", "a", 2).unwrap();
+    assert!(ring.calculate_migration_on_remove("a").is_empty());
+    assert_eq!(ring.len(), 100);
+}
+
+#[test]
+fn remove_preview_describes_the_keys_that_change_owner() {
+    let mut ring = ConsistentRing::try_new(RingConfig {
+        virtual_node_base_count: 5,
+        build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
+    })
+    .unwrap();
+    ring.add_node("alpha", "a", 2).unwrap();
+    ring.add_node("beta", "b", 1).unwrap();
+    ring.add_node("gamma", "c", 1).unwrap();
+
+    let preview = ring.calculate_migration_on_remove("a");
+    assert_eq!(preview.len(), 10);
+    assert_eq!(ring.len(), 20);
+    let mut future_ring = ring.clone();
+    future_ring.remove_node("a");
+    assert_eq!(future_ring.len(), 10);
+
+    for key in 0..2_000_u64 {
+        let old_owner = *ring.get_node(&key).unwrap();
+        let new_owner = *future_ring.get_node(&key).unwrap();
+        let matching: Vec<_> = preview
+            .iter()
+            .filter(|range| in_range(hash(&key), range.start_hash, range.end_hash))
+            .collect();
+
+        if old_owner == "alpha" {
+            assert_eq!(matching.len(), 1, "key {key}");
+            assert_eq!(matching[0].from_node, old_owner, "key {key}");
+            assert_eq!(matching[0].to_node, new_owner, "key {key}");
+        } else {
+            assert!(matching.is_empty(), "key {key}");
+            assert_eq!(new_owner, old_owner, "key {key}");
+        }
+    }
+}
+
+#[test]
+fn remove_preview_uses_the_previous_token_across_the_ring_boundary() {
+    let mut ring = ConsistentRing::try_new(RingConfig {
+        virtual_node_base_count: 1,
+        build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
+    })
+    .unwrap();
+    ring.add_node("alpha", "a", 1).unwrap();
+    ring.add_node("beta", "b", 1).unwrap();
+
+    let ranges = ring.calculate_migration_on_remove("a");
+    assert_eq!(ranges.len(), 1);
+    assert_eq!(ranges[0].start_hash, hash("b#virtual-node-0"));
+    assert_eq!(ranges[0].end_hash, hash("a#virtual-node-0"));
+    assert_eq!(ranges[0].from_node, "alpha");
+    assert_eq!(ranges[0].to_node, "beta");
 }
