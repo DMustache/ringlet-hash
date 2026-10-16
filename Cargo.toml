@@ -7,6 +7,7 @@ description = "Consistent hashing with weighted nodes and cluster migration prev
 keywords = ["consistent-hashing", "hash-ring", "load-balancing", "sharding", "distributed"]
 categories = ["data-structures", "algorithms"]
 repository = "https://github.com/DMustache/ringlet"
+documentation = "https://docs.rs/ringlet-hash/latest/ringlet_hash"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
 

@@ -1,16 +1,11 @@
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    hash::{BuildHasher, Hash},
-};
+use std::hash::{BuildHasher, Hash};
 
-use crate::{ConsistentRing, RingConfig, RingError, TokenRangeMigration};
+use crate::{ConsistentRing, PhysicalRingNode, RingConfig, RingError, TokenRangeMigration};
 
-/// Owns physical node membership while the ring handles key placement.
+/// Manages physical node membership through a [`ConsistentRing`].
 ///
-/// The registry maps each unique identifier to its node value and replica
-/// multiplier. Membership changes go through this type so the registry and
-/// ring stay in sync.
+/// The ring owns each physical value and its weight once. This type provides
+/// checked membership changes and delegates placement to the ring.
 ///
 /// # Example
 ///
@@ -36,24 +31,22 @@ use crate::{ConsistentRing, RingConfig, RingError, TokenRangeMigration};
 /// ```
 #[derive(Clone)]
 pub struct ClusterManager<T, BH: BuildHasher> {
-    nodes: HashMap<String, (T, usize)>,
     ring: ConsistentRing<T, BH>,
 }
 
-impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ClusterManager<T, BH> {
+impl<T, BH: BuildHasher> ClusterManager<T, BH> {
     /// Creates a manager with an empty ring.
     ///
     /// Returns [`RingError::EmptyRing`] if the base virtual node count is zero.
     pub fn try_new(config: RingConfig<BH>) -> Result<Self, RingError> {
         Ok(Self {
-            nodes: HashMap::new(),
             ring: ConsistentRing::try_new(config)?,
         })
     }
 
-    /// Returns the physical node registry, keyed by identifier.
-    pub fn nodes(&self) -> &HashMap<String, (T, usize)> {
-        &self.nodes
+    /// Returns physical nodes and weights in insertion order.
+    pub fn nodes(&self) -> &[PhysicalRingNode<T>] {
+        self.ring.physical_nodes()
     }
 
     /// Returns the ring for read-only lookups and token inspection.
@@ -71,14 +64,7 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ClusterManager<T, BH
         identifier: &str,
         replica_multiplier: usize,
     ) -> Result<(), RingError> {
-        if self.nodes.contains_key(identifier) {
-            return Err(RingError::NodeAlreadyExists(identifier.to_owned()));
-        }
-
-        self.ring
-            .add_node(node.clone(), identifier, replica_multiplier)?;
-        self.nodes
-            .insert(identifier.to_owned(), (node, replica_multiplier));
+        self.ring.add_node(node, identifier, replica_multiplier)?;
         Ok(())
     }
 
@@ -86,12 +72,11 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ClusterManager<T, BH
     ///
     /// Returns [`RingError::NodeNotFound`] for an unknown identifier.
     pub fn remove_node(&mut self, identifier: &str) -> Result<(), RingError> {
-        if !self.nodes.contains_key(identifier) {
+        if !self.ring.contains_identifier(identifier) {
             return Err(RingError::NodeNotFound(identifier.to_owned()));
         }
 
         self.ring.remove_node(identifier);
-        self.nodes.remove(identifier);
         Ok(())
     }
 
@@ -104,8 +89,12 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ClusterManager<T, BH
         new_node: T,
         identifier: &str,
         replica_multiplier: usize,
-    ) -> Result<Vec<TokenRangeMigration<T>>, RingError> {
-        if self.nodes.contains_key(identifier) {
+    ) -> Result<Vec<TokenRangeMigration<T>>, RingError>
+    where
+        T: Clone,
+        BH: Clone,
+    {
+        if self.ring.contains_identifier(identifier) {
             return Err(RingError::NodeAlreadyExists(identifier.to_owned()));
         }
 
@@ -120,8 +109,12 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ClusterManager<T, BH
     pub fn calculate_migration_on_remove(
         &self,
         identifier: &str,
-    ) -> Result<Vec<TokenRangeMigration<T>>, RingError> {
-        if !self.nodes.contains_key(identifier) {
+    ) -> Result<Vec<TokenRangeMigration<T>>, RingError>
+    where
+        T: Clone,
+        BH: Clone,
+    {
+        if !self.ring.contains_identifier(identifier) {
             return Err(RingError::NodeNotFound(identifier.to_owned()));
         }
 
@@ -140,11 +133,11 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ClusterManager<T, BH
 
     /// Returns the number of registered physical nodes.
     pub fn len(&self) -> usize {
-        self.nodes.len()
+        self.ring.physical_nodes().len()
     }
 
     /// Returns whether no physical nodes are registered.
     pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
+        self.ring.physical_nodes().is_empty()
     }
 }

@@ -3,7 +3,7 @@ use std::{
     hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher},
 };
 
-use ringlet_hash::{ConsistentRing, RingConfig};
+use ringlet_hash::{ConsistentRing, RingConfig, RingError};
 
 fn ring() -> ConsistentRing<&'static str, BuildHasherDefault<DefaultHasher>> {
     ConsistentRing::try_new(RingConfig {
@@ -66,6 +66,35 @@ fn adding_a_node_makes_the_ring_nonempty() {
     ring.add_node("alpha", "a", 1).unwrap();
     assert!(!ring.is_empty());
     assert!(ring.len() > 0);
+}
+
+#[test]
+fn virtual_nodes_share_one_non_clone_physical_value() {
+    struct Server(String);
+
+    let mut ring = ConsistentRing::try_new(RingConfig {
+        virtual_node_base_count: 10,
+        build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
+    })
+    .unwrap();
+    ring.add_node(Server("alpha".into()), "a", 3).unwrap();
+
+    assert_eq!(ring.len(), 30);
+    assert_eq!(ring.physical_nodes().len(), 1);
+    assert_eq!(ring.get_node(&"key").unwrap().0, "alpha");
+}
+
+#[test]
+fn ring_rejects_duplicate_identifiers() {
+    let mut ring = ring();
+    ring.add_node("alpha", "a", 1).unwrap();
+    assert!(matches!(
+        ring.add_node("replacement", "a", 1),
+        Err(RingError::NodeAlreadyExists(id)) if id == "a"
+    ));
+    assert_eq!(ring.physical_nodes().len(), 1);
+    assert_eq!(ring.len(), 50);
+    assert_eq!(ring.get_node(&"key"), Some(&"alpha"));
 }
 
 #[test]

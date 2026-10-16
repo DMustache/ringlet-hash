@@ -9,8 +9,9 @@
 //! [`BuildHasher`] implementation, and [`Hash`] representation for keys. Otherwise
 //! they may disagree about ownership.
 //!
-//! [`ClusterManager`] keeps a registry of physical nodes and their weights in
-//! sync with a [`ConsistentRing`]. Use it when managing cluster membership.
+//! [`ConsistentRing`] owns each physical node and its weight once; virtual
+//! positions refer to those nodes by index. [`ClusterManager`] provides checked
+//! membership changes over a ring.
 //!
 //! # Example
 //!
@@ -35,7 +36,6 @@
 
 use std::{
     collections::HashSet,
-    fmt::Debug,
     hash::{BuildHasher, Hash},
 };
 
@@ -45,12 +45,36 @@ pub use cluster_manager::ClusterManager;
 
 /// A virtual node placed at a hash position on the ring.
 ///
-/// Ring nodes are managed by [`ConsistentRing`]; their fields are private.
+/// Its index refers to one physical node owned by [`ConsistentRing`].
 #[derive(Debug, Clone)]
-pub struct RingNode<T> {
+pub struct VirtualRingNode {
     hash: u64,
-    node: T,
+    physical_node_index: usize,
+}
+
+/// A physical node stored once, regardless of its number of virtual positions.
+#[derive(Debug, Clone)]
+pub struct PhysicalRingNode<T> {
     identifier: String,
+    value: T,
+    weight: usize,
+}
+
+impl<T> PhysicalRingNode<T> {
+    /// Returns the unique identifier used to place this node on the ring.
+    pub fn identifier(&self) -> &str {
+        &self.identifier
+    }
+
+    /// Returns the node value.
+    pub fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// Returns the multiplier used to determine its virtual node count.
+    pub fn weight(&self) -> usize {
+        self.weight
+    }
 }
 
 /// A proposed token interval to move when adding or removing a physical node.
@@ -81,11 +105,14 @@ pub struct RingConfig<BH: BuildHasher> {
 
 /// A consistent hashing ring of physical nodes of type `T`.
 ///
-/// The ring stores cloned values of `T` at its virtual node positions. Its
-/// [`len`](Self::len) counts virtual nodes, not physical nodes.
+/// The ring stores each physical value once. Virtual positions refer to it by
+/// index. [`len`](Self::len) counts virtual nodes, not physical nodes. Ordinary
+/// membership changes and lookups accept values that do not implement [`Clone`];
+/// migration previews require it because they return owned node values.
 #[derive(Clone)]
 pub struct ConsistentRing<T, BH: BuildHasher> {
-    nodes: Vec<RingNode<T>>,
+    nodes: Vec<VirtualRingNode>,
+    physical_nodes: Vec<PhysicalRingNode<T>>,
     virtual_node_base_count: usize,
     build_hasher: BH,
 }
@@ -103,7 +130,7 @@ pub enum RingError {
     NodeNotFound(String),
 }
 
-impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ConsistentRing<T, BH> {
+impl<T, BH: BuildHasher> ConsistentRing<T, BH> {
     /// Creates an empty ring with the supplied configuration.
     ///
     /// Returns [`RingError::EmptyRing`] if `virtual_node_base_count` is zero.
@@ -113,6 +140,7 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ConsistentRing<T, BH
         }
         Ok(Self {
             nodes: Vec::new(),
+            physical_nodes: Vec::new(),
             virtual_node_base_count: config.virtual_node_base_count,
             build_hasher: config.build_hasher,
         })
@@ -129,9 +157,8 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ConsistentRing<T, BH
     /// Adds a physical node and returns its identifier.
     ///
     /// The node gets `virtual_node_base_count * replica_multiplier` positions.
-    /// Give each physical node a unique identifier; this method does not reject
-    /// duplicate identifiers. Returns [`RingError::ZeroWeight`] for a zero
-    /// multiplier.
+    /// Returns [`RingError::NodeAlreadyExists`] for a duplicate identifier and
+    /// [`RingError::ZeroWeight`] for a zero multiplier.
     pub fn add_node(
         &mut self,
         node: T,
@@ -141,28 +168,60 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ConsistentRing<T, BH
         if replica_multiplier == 0 {
             return Err(RingError::ZeroWeight("Replica multiplier must be > 0"));
         }
+        if self.contains_identifier(identifier) {
+            return Err(RingError::NodeAlreadyExists(identifier.to_owned()));
+        }
 
         let virtual_nodes_count = self.virtual_node_base_count * replica_multiplier;
+        let physical_node_index = self.physical_nodes.len();
 
         for i in 0..virtual_nodes_count {
             let virtual_node_key = self.format_virtual_node_key(identifier, i);
             let hash = self.hash_key(&virtual_node_key);
 
-            self.nodes.push(RingNode {
+            self.nodes.push(VirtualRingNode {
                 hash,
-                node: node.clone(),
-                identifier: identifier.to_string().clone(),
+                physical_node_index,
             });
         }
 
         self.nodes.sort_unstable_by_key(|ring_node| ring_node.hash);
+        self.physical_nodes.push(PhysicalRingNode {
+            identifier: identifier.to_owned(),
+            value: node,
+            weight: replica_multiplier,
+        });
 
         Ok(identifier.to_string())
     }
 
-    /// Removes all virtual nodes for `identifier`; an unknown identifier has no effect.
+    /// Removes a physical node and all its virtual positions; an unknown identifier has no effect.
     pub fn remove_node(&mut self, identifier: &str) {
-        self.nodes.retain(|node| node.identifier != identifier);
+        if let Some(index) = self.physical_node_index(identifier) {
+            self.nodes.retain(|node| node.physical_node_index != index);
+            for node in &mut self.nodes {
+                if node.physical_node_index > index {
+                    node.physical_node_index -= 1;
+                }
+            }
+            self.physical_nodes.remove(index);
+        }
+    }
+
+    fn physical_node_index(&self, identifier: &str) -> Option<usize> {
+        self.physical_nodes
+            .iter()
+            .position(|node| node.identifier == identifier)
+    }
+
+    /// Returns whether a physical node with this identifier is registered.
+    pub fn contains_identifier(&self, identifier: &str) -> bool {
+        self.physical_node_index(identifier).is_some()
+    }
+
+    /// Returns the physical nodes and their weights in insertion order.
+    pub fn physical_nodes(&self) -> &[PhysicalRingNode<T>] {
+        &self.physical_nodes
     }
 
     fn get_node_by_hash(&self, hash: u64) -> Option<&T> {
@@ -172,7 +231,7 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ConsistentRing<T, BH
 
         let start_index = self.find_start_index(hash);
 
-        Some(&self.nodes[start_index].node)
+        Some(&self.physical_nodes[self.nodes[start_index].physical_node_index].value)
     }
 
     /// Returns the index of the first virtual node at or after `target_hash`.
@@ -210,14 +269,14 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ConsistentRing<T, BH
         let start_index = self.find_start_index(target_hash);
 
         let mut result = Vec::new();
-        let mut seen_indentifiers = HashSet::new();
+        let mut seen_indices = HashSet::new();
 
         for i in 0..self.len() {
             let current_index = (start_index + i) % self.len();
             let ring_node = &self.nodes[current_index];
 
-            if seen_indentifiers.insert(&ring_node.identifier) {
-                result.push(&ring_node.node);
+            if seen_indices.insert(ring_node.physical_node_index) {
+                result.push(&self.physical_nodes[ring_node.physical_node_index].value);
                 if result.len() == count {
                     break;
                 }
@@ -238,16 +297,21 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ConsistentRing<T, BH
         new_node: T,
         new_identifier: &str,
         new_replica_multiplier: usize,
-    ) -> Result<Vec<TokenRangeMigration<T>>, RingError> {
+    ) -> Result<Vec<TokenRangeMigration<T>>, RingError>
+    where
+        T: Clone,
+        BH: Clone,
+    {
         let mut future_ring = self.clone();
 
         future_ring.add_node(new_node.clone(), new_identifier, new_replica_multiplier)?;
+        let new_index = future_ring.physical_nodes.len() - 1;
 
         let mut migrations = Vec::new();
         for i in 0..future_ring.len() {
             let current_virtual_node = &future_ring.nodes[i];
 
-            if current_virtual_node.identifier == new_identifier {
+            if current_virtual_node.physical_node_index == new_index {
                 let old_node = self.get_node_by_hash(current_virtual_node.hash);
 
                 if let Some(from_node) = old_node {
@@ -274,7 +338,11 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ConsistentRing<T, BH
     /// Each range is `(start_hash, end_hash]` on the hash ring, wrapping at
     /// [`u64::MAX`]. The ring is unchanged. Returns an empty list when the
     /// identifier is absent or when removal would leave no destination node.
-    pub fn calculate_migration_on_remove(&self, identifier: &str) -> Vec<TokenRangeMigration<T>> {
+    pub fn calculate_migration_on_remove(&self, identifier: &str) -> Vec<TokenRangeMigration<T>>
+    where
+        T: Clone,
+        BH: Clone,
+    {
         if self.nodes.is_empty() {
             return Vec::new();
         }
@@ -285,10 +353,14 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ConsistentRing<T, BH
             return Vec::new();
         }
 
+        let Some(removed_index) = self.physical_node_index(identifier) else {
+            return Vec::new();
+        };
+
         self.nodes
             .iter()
             .enumerate()
-            .filter(|(_, node)| node.identifier == identifier)
+            .filter(|(_, node)| node.physical_node_index == removed_index)
             .map(|(index, node)| {
                 let previous_index = if index == 0 {
                     self.nodes.len() - 1
@@ -299,7 +371,7 @@ impl<T: Clone + PartialEq + Debug, BH: BuildHasher + Clone> ConsistentRing<T, BH
                 TokenRangeMigration {
                     start_hash: self.nodes[previous_index].hash,
                     end_hash: node.hash,
-                    from_node: node.node.clone(),
+                    from_node: self.physical_nodes[removed_index].value.clone(),
                     to_node: future_ring
                         .get_node_by_hash(node.hash)
                         .expect("a destination exists after removal")

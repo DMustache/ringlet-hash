@@ -39,7 +39,7 @@ fn main() -> Result<(), ringlet_hash::RingError> {
 }
 ```
 
-`ClusterManager` keeps a registry of physical nodes and weights. `ConsistentRing` handles placement and can also be used directly. Use the same hash builder, identifiers, weights, and key types across processes that share a ring.
+`ConsistentRing` stores each physical node and its weight once; its virtual positions refer to those nodes by index. `ClusterManager` provides checked membership changes over a ring. `cluster.nodes()` returns physical nodes in insertion order, with `identifier()`, `value()`, and `weight()` accessors. Adding and looking up nodes no longer requires `T: Clone`; migration previews still require it because they return owned values. Use the same hash builder, identifiers, weights, and key types across processes that share a ring.
 
 ## Coverage
 
@@ -48,8 +48,8 @@ The [coverage workflow](.github/workflows/coverage-badges.yml) refreshes these b
 <!-- coverage-details:start -->
 | Metric | Result | How it is measured |
 | --- | ---: | --- |
-| Test line coverage | 100% (213/213 lines) | `cargo llvm-cov` on library source; tests and benchmarks excluded |
-| Public API documentation | 100% (27/27 items) | Rustdoc `--show-coverage` documented-item count |
+| Test line coverage | 100% (257/257 lines) | `cargo llvm-cov` on library source; tests and benchmarks excluded |
+| Public API documentation | 100% (33/33 items) | Rustdoc `--show-coverage` documented-item count |
 <!-- coverage-details:end -->
 
 Recheck them with:

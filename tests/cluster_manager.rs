@@ -39,7 +39,9 @@ fn adding_a_node_registers_its_value_weight_and_tokens() {
     manager.add_node("alpha", "a", 3).unwrap();
 
     assert_eq!(manager.len(), 1);
-    assert_eq!(manager.nodes().get("a"), Some(&("alpha", 3)));
+    assert_eq!(manager.nodes()[0].identifier(), "a");
+    assert_eq!(manager.nodes()[0].value(), &"alpha");
+    assert_eq!(manager.nodes()[0].weight(), 3);
     assert_eq!(manager.ring().len(), 15);
     assert_eq!(manager.get_node(&"key"), Some(&"alpha"));
 }
@@ -53,7 +55,9 @@ fn duplicate_identifier_is_rejected_without_changing_membership() {
         manager.add_node("replacement", "a", 1),
         Err(RingError::NodeAlreadyExists(id)) if id == "a"
     ));
-    assert_eq!(manager.nodes().get("a"), Some(&("alpha", 2)));
+    assert_eq!(manager.nodes()[0].identifier(), "a");
+    assert_eq!(manager.nodes()[0].value(), &"alpha");
+    assert_eq!(manager.nodes()[0].weight(), 2);
     assert_eq!(manager.ring().len(), 10);
     assert_eq!(manager.get_node(&"key"), Some(&"alpha"));
 }
@@ -77,7 +81,7 @@ fn removing_a_weighted_node_removes_every_virtual_token() {
 
     manager.remove_node("a").unwrap();
     assert_eq!(manager.len(), 1);
-    assert!(!manager.nodes().contains_key("a"));
+    assert!(!manager.ring().contains_identifier("a"));
     assert_eq!(manager.ring().len(), 5);
     for key in 0..100 {
         assert_eq!(manager.get_node(&key), Some(&"beta"));
@@ -129,7 +133,7 @@ fn add_preview_does_not_change_registry_or_ring() {
     assert!(migrations.iter().all(|range| range.to_node == "beta"));
     assert_eq!(manager.len(), 1);
     assert_eq!(manager.ring().len(), 5);
-    assert!(!manager.nodes().contains_key("b"));
+    assert!(!manager.ring().contains_identifier("b"));
 }
 
 #[test]
