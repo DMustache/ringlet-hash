@@ -56,8 +56,8 @@ fn main() {
     };
     let mut ring = ConsistentRing::try_new(config).unwrap();
 
-    ring.add_node("server_A", &1.to_string(), 1).unwrap();
-    ring.add_node("server_B", &2.to_string(), 1).unwrap();
+    ring.add_node(&"server_A", &1.to_string(), 1).unwrap();
+    ring.add_node(&"server_B", &2.to_string(), 1).unwrap();
 
     let mut hits_a = 0;
     let mut hits_b = 0;

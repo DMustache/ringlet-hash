@@ -54,10 +54,10 @@ fn main() {
 
     let mut ring = ConsistentRing::try_new(config).unwrap();
 
-    ring.add_node(ServerNode { addr: "Foo" }, &1.to_string(), 1)
-        .unwrap();
-    ring.add_node(ServerNode { addr: "Bar" }, &2.to_string(), 1)
-        .unwrap();
+    let foo = ServerNode { addr: "Foo" };
+    let bar = ServerNode { addr: "Bar" };
+    ring.add_node(&foo, &1.to_string(), 1).unwrap();
+    ring.add_node(&bar, &2.to_string(), 1).unwrap();
 
     let keys = vec!["bar_session", "baz_session"];
     for key in keys {

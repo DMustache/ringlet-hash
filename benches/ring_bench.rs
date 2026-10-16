@@ -12,11 +12,11 @@ fn bench_ring_lookup(c: &mut Criterion) {
     };
     let mut ring = ConsistentRing::try_new(config).unwrap();
 
-    ring.add_node("Server_A", "node_a", 2).unwrap();
-    ring.add_node("Server_B", "node_b", 1).unwrap();
-    ring.add_node("Server_C", "node_c", 3).unwrap();
-    ring.add_node("Server_D", "node_d", 1).unwrap();
-    ring.add_node("Server_E", "node_e", 2).unwrap();
+    ring.add_node(&"Server_A", "node_a", 2).unwrap();
+    ring.add_node(&"Server_B", "node_b", 1).unwrap();
+    ring.add_node(&"Server_C", "node_c", 3).unwrap();
+    ring.add_node(&"Server_D", "node_d", 1).unwrap();
+    ring.add_node(&"Server_E", "node_e", 2).unwrap();
 
     c.bench_function("consistent_ring_get_node", |b| {
         let mut counter = 0usize;

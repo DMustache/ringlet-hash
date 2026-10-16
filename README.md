@@ -20,13 +20,15 @@ use std::hash::{BuildHasherDefault, DefaultHasher};
 use ringlet_hash::{ClusterManager, RingConfig};
 
 fn main() -> Result<(), ringlet_hash::RingError> {
+    let server_a = String::from("server-a");
+    let server_b = String::from("server-b");
     let mut cluster = ClusterManager::try_new(RingConfig {
         virtual_node_base_count: 50,
         build_hasher: BuildHasherDefault::<DefaultHasher>::default(),
     })?;
 
-    cluster.add_node("server-a", "a", 1)?;
-    cluster.add_node("server-b", "b", 2)?;
+    cluster.add_node(&server_a, "a", 1)?;
+    cluster.add_node(&server_b, "b", 2)?;
 
     let owner = cluster.get_node(&"customer-42");
     let replicas = cluster.get_nodes(&"customer-42", 2);
@@ -39,7 +41,7 @@ fn main() -> Result<(), ringlet_hash::RingError> {
 }
 ```
 
-`ConsistentRing` stores each physical node and its weight once; its virtual positions refer to those nodes by index. `ClusterManager` provides checked membership changes over a ring. `cluster.nodes()` returns physical nodes in insertion order, with `identifier()`, `value()`, and `weight()` accessors. Adding and looking up nodes no longer requires `T: Clone`; migration previews still require it because they return owned values. Use the same hash builder, identifiers, weights, and key types across processes that share a ring.
+`ConsistentRing` borrows each physical node and stores its identifier and weight once; its virtual positions refer to those entries by index. Keep node values alive while the ring uses them. `ClusterManager` provides checked membership changes over a ring. `cluster.nodes()` returns physical nodes in insertion order, with `identifier()`, `value()`, and `weight()` accessors. Adding and looking up nodes does not require `T: Clone`; migration previews still require it because they return owned values. Use the same hash builder, identifiers, weights, and key types across processes that share a ring.
 
 ## Coverage
 

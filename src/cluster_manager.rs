@@ -4,7 +4,8 @@ use crate::{ConsistentRing, PhysicalRingNode, RingConfig, RingError, TokenRangeM
 
 /// Manages physical node membership through a [`ConsistentRing`].
 ///
-/// The ring owns each physical value and its weight once. This type provides
+/// The ring borrows each physical value and stores its weight once. Callers
+/// must keep values alive while the manager uses them. This type provides
 /// checked membership changes and delegates placement to the ring.
 ///
 /// # Example
@@ -18,23 +19,25 @@ use crate::{ConsistentRing, PhysicalRingNode, RingConfig, RingError, TokenRangeM
 ///     build_hasher: BuildHasherDefault::<DefaultHasher>::default(),
 /// })?;
 ///
-/// cluster.add_node("server-a", "a", 1)?;
-/// cluster.add_node("server-b", "b", 2)?;
+/// let server_a = String::from("server-a");
+/// let server_b = String::from("server-b");
+/// cluster.add_node(&server_a, "a", 1)?;
+/// cluster.add_node(&server_b, "b", 2)?;
 ///
 /// let moves = cluster.calculate_migration_on_remove("a")?;
 /// assert!(!moves.is_empty());
 ///
 /// cluster.remove_node("a")?;
-/// assert_eq!(cluster.get_node(&"customer-42"), Some(&"server-b"));
+/// assert_eq!(cluster.get_node(&"customer-42"), Some(&server_b));
 ///
 /// Ok::<(), ringlet_hash::RingError>(())
 /// ```
 #[derive(Clone)]
-pub struct ClusterManager<T, BH: BuildHasher> {
-    ring: ConsistentRing<T, BH>,
+pub struct ClusterManager<'a, T, BH: BuildHasher> {
+    ring: ConsistentRing<'a, T, BH>,
 }
 
-impl<T, BH: BuildHasher> ClusterManager<T, BH> {
+impl<'a, T, BH: BuildHasher> ClusterManager<'a, T, BH> {
     /// Creates a manager with an empty ring.
     ///
     /// Returns [`RingError::EmptyRing`] if the base virtual node count is zero.
@@ -45,12 +48,12 @@ impl<T, BH: BuildHasher> ClusterManager<T, BH> {
     }
 
     /// Returns physical nodes and weights in insertion order.
-    pub fn nodes(&self) -> &[PhysicalRingNode<T>] {
+    pub fn nodes(&self) -> &[PhysicalRingNode<'a, T>] {
         self.ring.physical_nodes()
     }
 
     /// Returns the ring for read-only lookups and token inspection.
-    pub fn ring(&self) -> &ConsistentRing<T, BH> {
+    pub fn ring(&self) -> &ConsistentRing<'a, T, BH> {
         &self.ring
     }
 
@@ -60,7 +63,7 @@ impl<T, BH: BuildHasher> ClusterManager<T, BH> {
     /// [`RingError::ZeroWeight`] for a zero multiplier.
     pub fn add_node(
         &mut self,
-        node: T,
+        node: &'a T,
         identifier: &str,
         replica_multiplier: usize,
     ) -> Result<(), RingError> {
@@ -86,7 +89,7 @@ impl<T, BH: BuildHasher> ClusterManager<T, BH> {
     /// [`RingError::ZeroWeight`] for a zero multiplier.
     pub fn calculate_migration_on_add(
         &self,
-        new_node: T,
+        new_node: &'a T,
         identifier: &str,
         replica_multiplier: usize,
     ) -> Result<Vec<TokenRangeMigration<T>>, RingError>
@@ -122,12 +125,12 @@ impl<T, BH: BuildHasher> ClusterManager<T, BH> {
     }
 
     /// Returns the primary owner of `key`, or `None` for an empty cluster.
-    pub fn get_node<K: Hash>(&self, key: &K) -> Option<&T> {
+    pub fn get_node<K: Hash>(&self, key: &K) -> Option<&'a T> {
         self.ring.get_node(key)
     }
 
     /// Returns up to `count` distinct physical owners for `key`.
-    pub fn get_nodes<K: Hash>(&self, key: &K, count: usize) -> Vec<&T> {
+    pub fn get_nodes<K: Hash>(&self, key: &K, count: usize) -> Vec<&'a T> {
         self.ring.get_nodes(key, count)
     }
 

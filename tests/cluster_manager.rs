@@ -2,7 +2,7 @@ use std::hash::{BuildHasherDefault, DefaultHasher};
 
 use ringlet_hash::{ClusterManager, RingConfig, RingError};
 
-type TestManager = ClusterManager<&'static str, BuildHasherDefault<DefaultHasher>>;
+type TestManager = ClusterManager<'static, &'static str, BuildHasherDefault<DefaultHasher>>;
 
 fn manager() -> TestManager {
     TestManager::try_new(RingConfig {
@@ -36,7 +36,7 @@ fn manager_rejects_zero_base_virtual_nodes() {
 #[test]
 fn adding_a_node_registers_its_value_weight_and_tokens() {
     let mut manager = manager();
-    manager.add_node("alpha", "a", 3).unwrap();
+    manager.add_node(&"alpha", "a", 3).unwrap();
 
     assert_eq!(manager.len(), 1);
     assert_eq!(manager.nodes()[0].identifier(), "a");
@@ -49,10 +49,10 @@ fn adding_a_node_registers_its_value_weight_and_tokens() {
 #[test]
 fn duplicate_identifier_is_rejected_without_changing_membership() {
     let mut manager = manager();
-    manager.add_node("alpha", "a", 2).unwrap();
+    manager.add_node(&"alpha", "a", 2).unwrap();
 
     assert!(matches!(
-        manager.add_node("replacement", "a", 1),
+        manager.add_node(&"replacement", "a", 1),
         Err(RingError::NodeAlreadyExists(id)) if id == "a"
     ));
     assert_eq!(manager.nodes()[0].identifier(), "a");
@@ -66,7 +66,7 @@ fn duplicate_identifier_is_rejected_without_changing_membership() {
 fn zero_weight_is_rejected_without_registering_a_node() {
     let mut manager = manager();
     assert!(matches!(
-        manager.add_node("alpha", "a", 0),
+        manager.add_node(&"alpha", "a", 0),
         Err(RingError::ZeroWeight(_))
     ));
     assert!(manager.is_empty());
@@ -76,8 +76,8 @@ fn zero_weight_is_rejected_without_registering_a_node() {
 #[test]
 fn removing_a_weighted_node_removes_every_virtual_token() {
     let mut manager = manager();
-    manager.add_node("alpha", "a", 3).unwrap();
-    manager.add_node("beta", "b", 1).unwrap();
+    manager.add_node(&"alpha", "a", 3).unwrap();
+    manager.add_node(&"beta", "b", 1).unwrap();
 
     manager.remove_node("a").unwrap();
     assert_eq!(manager.len(), 1);
@@ -91,7 +91,7 @@ fn removing_a_weighted_node_removes_every_virtual_token() {
 #[test]
 fn removing_the_last_node_empties_both_registry_and_ring() {
     let mut manager = manager();
-    manager.add_node("alpha", "a", 1).unwrap();
+    manager.add_node(&"alpha", "a", 1).unwrap();
     manager.remove_node("a").unwrap();
     assert!(manager.is_empty());
     assert!(manager.ring().is_empty());
@@ -101,7 +101,7 @@ fn removing_the_last_node_empties_both_registry_and_ring() {
 #[test]
 fn removing_an_unknown_identifier_leaves_membership_unchanged() {
     let mut manager = manager();
-    manager.add_node("alpha", "a", 1).unwrap();
+    manager.add_node(&"alpha", "a", 1).unwrap();
     assert!(matches!(
         manager.remove_node("missing"),
         Err(RingError::NodeNotFound(id)) if id == "missing"
@@ -113,8 +113,8 @@ fn removing_an_unknown_identifier_leaves_membership_unchanged() {
 #[test]
 fn lookups_delegate_to_the_ring() {
     let mut manager = manager();
-    manager.add_node("alpha", "a", 1).unwrap();
-    manager.add_node("beta", "b", 1).unwrap();
+    manager.add_node(&"alpha", "a", 1).unwrap();
+    manager.add_node(&"beta", "b", 1).unwrap();
     for key in 0..100 {
         assert_eq!(manager.get_node(&key), manager.ring().get_node(&key));
         assert_eq!(
@@ -127,8 +127,8 @@ fn lookups_delegate_to_the_ring() {
 #[test]
 fn add_preview_does_not_change_registry_or_ring() {
     let mut manager = manager();
-    manager.add_node("alpha", "a", 1).unwrap();
-    let migrations = manager.calculate_migration_on_add("beta", "b", 2).unwrap();
+    manager.add_node(&"alpha", "a", 1).unwrap();
+    let migrations = manager.calculate_migration_on_add(&"beta", "b", 2).unwrap();
     assert!(!migrations.is_empty());
     assert!(migrations.iter().all(|range| range.to_node == "beta"));
     assert_eq!(manager.len(), 1);
@@ -139,13 +139,13 @@ fn add_preview_does_not_change_registry_or_ring() {
 #[test]
 fn add_preview_rejects_duplicate_and_zero_weight() {
     let mut manager = manager();
-    manager.add_node("alpha", "a", 1).unwrap();
+    manager.add_node(&"alpha", "a", 1).unwrap();
     assert!(matches!(
-        manager.calculate_migration_on_add("replacement", "a", 1),
+        manager.calculate_migration_on_add(&"replacement", "a", 1),
         Err(RingError::NodeAlreadyExists(id)) if id == "a"
     ));
     assert!(matches!(
-        manager.calculate_migration_on_add("beta", "b", 0),
+        manager.calculate_migration_on_add(&"beta", "b", 0),
         Err(RingError::ZeroWeight(_))
     ));
     assert_eq!(manager.len(), 1);
@@ -154,8 +154,8 @@ fn add_preview_rejects_duplicate_and_zero_weight() {
 #[test]
 fn remove_preview_does_not_change_registry_or_ring() {
     let mut manager = manager();
-    manager.add_node("alpha", "a", 2).unwrap();
-    manager.add_node("beta", "b", 1).unwrap();
+    manager.add_node(&"alpha", "a", 2).unwrap();
+    manager.add_node(&"beta", "b", 1).unwrap();
     let migrations = manager.calculate_migration_on_remove("a").unwrap();
     assert_eq!(migrations.len(), 10);
     assert!(
@@ -170,7 +170,7 @@ fn remove_preview_does_not_change_registry_or_ring() {
 #[test]
 fn remove_preview_of_last_node_has_no_destination() {
     let mut manager = manager();
-    manager.add_node("alpha", "a", 2).unwrap();
+    manager.add_node(&"alpha", "a", 2).unwrap();
     assert!(
         manager
             .calculate_migration_on_remove("a")

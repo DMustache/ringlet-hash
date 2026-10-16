@@ -9,9 +9,10 @@
 //! [`BuildHasher`] implementation, and [`Hash`] representation for keys. Otherwise
 //! they may disagree about ownership.
 //!
-//! [`ConsistentRing`] owns each physical node and its weight once; virtual
-//! positions refer to those nodes by index. [`ClusterManager`] provides checked
-//! membership changes over a ring.
+//! [`ConsistentRing`] borrows each physical node and stores its identifier and
+//! weight once; virtual positions refer to those entries by index. The caller
+//! must keep node values alive while the ring uses them. [`ClusterManager`]
+//! provides checked membership changes over a ring.
 //!
 //! # Example
 //!
@@ -24,12 +25,14 @@
 //!     virtual_node_base_count: 50,
 //!     build_hasher: BuildHasherDefault::<DefaultHasher>::default(),
 //! };
+//! let server_a = String::from("server-a");
+//! let server_b = String::from("server-b");
 //! let mut ring = ConsistentRing::try_new(config)?;
-//! ring.add_node("server-a", "a", 1)?;
-//! ring.add_node("server-b", "b", 1)?;
+//! ring.add_node(&server_a, "a", 1)?;
+//! ring.add_node(&server_b, "b", 1)?;
 //!
 //! let owner = ring.get_node(&"customer-42").unwrap();
-//! assert!(["server-a", "server-b"].contains(owner));
+//! assert!(["server-a", "server-b"].contains(&owner.as_str()));
 //! assert_eq!(ring.get_nodes(&"customer-42", 2).len(), 2);
 //! # Ok::<(), RingError>(())
 //! ```
@@ -52,15 +55,15 @@ pub struct VirtualRingNode {
     physical_node_index: usize,
 }
 
-/// A physical node stored once, regardless of its number of virtual positions.
+/// A borrowed physical node stored once, regardless of its number of virtual positions.
 #[derive(Debug, Clone)]
-pub struct PhysicalRingNode<T> {
+pub struct PhysicalRingNode<'a, T> {
     identifier: String,
-    value: T,
+    value: &'a T,
     weight: usize,
 }
 
-impl<T> PhysicalRingNode<T> {
+impl<'a, T> PhysicalRingNode<'a, T> {
     /// Returns the unique identifier used to place this node on the ring.
     pub fn identifier(&self) -> &str {
         &self.identifier
@@ -68,7 +71,7 @@ impl<T> PhysicalRingNode<T> {
 
     /// Returns the node value.
     pub fn value(&self) -> &T {
-        &self.value
+        self.value
     }
 
     /// Returns the multiplier used to determine its virtual node count.
@@ -105,14 +108,15 @@ pub struct RingConfig<BH: BuildHasher> {
 
 /// A consistent hashing ring of physical nodes of type `T`.
 ///
-/// The ring stores each physical value once. Virtual positions refer to it by
-/// index. [`len`](Self::len) counts virtual nodes, not physical nodes. Ordinary
+/// The ring borrows each physical value and stores its identifier and weight
+/// once. Virtual positions refer to it by index. Values must outlive the ring.
+/// [`len`](Self::len) counts virtual nodes, not physical nodes. Ordinary
 /// membership changes and lookups accept values that do not implement [`Clone`];
 /// migration previews require it because they return owned node values.
 #[derive(Clone)]
-pub struct ConsistentRing<T, BH: BuildHasher> {
+pub struct ConsistentRing<'a, T, BH: BuildHasher> {
     nodes: Vec<VirtualRingNode>,
-    physical_nodes: Vec<PhysicalRingNode<T>>,
+    physical_nodes: Vec<PhysicalRingNode<'a, T>>,
     virtual_node_base_count: usize,
     build_hasher: BH,
 }
@@ -130,7 +134,7 @@ pub enum RingError {
     NodeNotFound(String),
 }
 
-impl<T, BH: BuildHasher> ConsistentRing<T, BH> {
+impl<'a, T, BH: BuildHasher> ConsistentRing<'a, T, BH> {
     /// Creates an empty ring with the supplied configuration.
     ///
     /// Returns [`RingError::EmptyRing`] if `virtual_node_base_count` is zero.
@@ -161,7 +165,7 @@ impl<T, BH: BuildHasher> ConsistentRing<T, BH> {
     /// [`RingError::ZeroWeight`] for a zero multiplier.
     pub fn add_node(
         &mut self,
-        node: T,
+        node: &'a T,
         identifier: &str,
         replica_multiplier: usize,
     ) -> Result<String, RingError> {
@@ -220,18 +224,18 @@ impl<T, BH: BuildHasher> ConsistentRing<T, BH> {
     }
 
     /// Returns the physical nodes and their weights in insertion order.
-    pub fn physical_nodes(&self) -> &[PhysicalRingNode<T>] {
+    pub fn physical_nodes(&self) -> &[PhysicalRingNode<'a, T>] {
         &self.physical_nodes
     }
 
-    fn get_node_by_hash(&self, hash: u64) -> Option<&T> {
+    fn get_node_by_hash(&self, hash: u64) -> Option<&'a T> {
         if self.nodes.is_empty() {
             return None;
         }
 
         let start_index = self.find_start_index(hash);
 
-        Some(&self.physical_nodes[self.nodes[start_index].physical_node_index].value)
+        Some(self.physical_nodes[self.nodes[start_index].physical_node_index].value)
     }
 
     /// Returns the index of the first virtual node at or after `target_hash`.
@@ -259,7 +263,7 @@ impl<T, BH: BuildHasher> ConsistentRing<T, BH> {
     /// The first result is the primary owner returned by [`get_node`](Self::get_node).
     /// The result is empty for an empty ring or a zero count, and may contain
     /// fewer than `count` nodes when the ring has fewer distinct identifiers.
-    pub fn get_nodes<K: Hash>(&self, key: &K, count: usize) -> Vec<&T> {
+    pub fn get_nodes<K: Hash>(&self, key: &K, count: usize) -> Vec<&'a T> {
         if self.is_empty() || count == 0 {
             return Vec::new();
         }
@@ -276,7 +280,7 @@ impl<T, BH: BuildHasher> ConsistentRing<T, BH> {
             let ring_node = &self.nodes[current_index];
 
             if seen_indices.insert(ring_node.physical_node_index) {
-                result.push(&self.physical_nodes[ring_node.physical_node_index].value);
+                result.push(self.physical_nodes[ring_node.physical_node_index].value);
                 if result.len() == count {
                     break;
                 }
@@ -294,7 +298,7 @@ impl<T, BH: BuildHasher> ConsistentRing<T, BH> {
     /// [`RingError::ZeroWeight`].
     pub fn calculate_migration_on_add(
         &self,
-        new_node: T,
+        new_node: &'a T,
         new_identifier: &str,
         new_replica_multiplier: usize,
     ) -> Result<Vec<TokenRangeMigration<T>>, RingError>
@@ -304,7 +308,7 @@ impl<T, BH: BuildHasher> ConsistentRing<T, BH> {
     {
         let mut future_ring = self.clone();
 
-        future_ring.add_node(new_node.clone(), new_identifier, new_replica_multiplier)?;
+        future_ring.add_node(new_node, new_identifier, new_replica_multiplier)?;
         let new_index = future_ring.physical_nodes.len() - 1;
 
         let mut migrations = Vec::new();
@@ -382,7 +386,7 @@ impl<T, BH: BuildHasher> ConsistentRing<T, BH> {
     }
 
     /// Returns the primary owner of `key`, or `None` for an empty ring.
-    pub fn get_node<K: Hash>(&self, key: &K) -> Option<&T> {
+    pub fn get_node<K: Hash>(&self, key: &K) -> Option<&'a T> {
         self.get_nodes(key, 1).into_iter().next()
     }
 

@@ -5,7 +5,7 @@ use std::{
 
 use ringlet_hash::{ConsistentRing, RingConfig, RingError};
 
-fn ring() -> ConsistentRing<&'static str, BuildHasherDefault<DefaultHasher>> {
+fn ring() -> ConsistentRing<'static, &'static str, BuildHasherDefault<DefaultHasher>> {
     ConsistentRing::try_new(RingConfig {
         virtual_node_base_count: 50,
         build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
@@ -13,11 +13,11 @@ fn ring() -> ConsistentRing<&'static str, BuildHasherDefault<DefaultHasher>> {
     .unwrap()
 }
 
-fn populated_ring() -> ConsistentRing<&'static str, BuildHasherDefault<DefaultHasher>> {
+fn populated_ring() -> ConsistentRing<'static, &'static str, BuildHasherDefault<DefaultHasher>> {
     let mut ring = ring();
-    ring.add_node("alpha", "a", 1).unwrap();
-    ring.add_node("beta", "b", 1).unwrap();
-    ring.add_node("gamma", "c", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
+    ring.add_node(&"beta", "b", 1).unwrap();
+    ring.add_node(&"gamma", "c", 1).unwrap();
     ring
 }
 
@@ -63,7 +63,7 @@ fn an_empty_ring_returns_no_replicas() {
 #[test]
 fn adding_a_node_makes_the_ring_nonempty() {
     let mut ring = ring();
-    ring.add_node("alpha", "a", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
     assert!(!ring.is_empty());
     assert!(ring.len() > 0);
 }
@@ -77,7 +77,8 @@ fn virtual_nodes_share_one_non_clone_physical_value() {
         build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
     })
     .unwrap();
-    ring.add_node(Server("alpha".into()), "a", 3).unwrap();
+    let server = Server("alpha".into());
+    ring.add_node(&server, "a", 3).unwrap();
 
     assert_eq!(ring.len(), 30);
     assert_eq!(ring.physical_nodes().len(), 1);
@@ -87,9 +88,9 @@ fn virtual_nodes_share_one_non_clone_physical_value() {
 #[test]
 fn ring_rejects_duplicate_identifiers() {
     let mut ring = ring();
-    ring.add_node("alpha", "a", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
     assert!(matches!(
-        ring.add_node("replacement", "a", 1),
+        ring.add_node(&"replacement", "a", 1),
         Err(RingError::NodeAlreadyExists(id)) if id == "a"
     ));
     assert_eq!(ring.physical_nodes().len(), 1);
@@ -100,7 +101,7 @@ fn ring_rejects_duplicate_identifiers() {
 #[test]
 fn one_node_owns_every_key() {
     let mut ring = ring();
-    ring.add_node("alpha", "a", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
     for key in keys() {
         assert_eq!(ring.get_node(&key), Some(&"alpha"));
     }
@@ -109,7 +110,7 @@ fn one_node_owns_every_key() {
 #[test]
 fn different_hashable_key_types_are_supported() {
     let mut ring = ring();
-    ring.add_node("alpha", "a", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
     assert_eq!(ring.get_node(&"hello"), Some(&"alpha"));
     assert_eq!(ring.get_node(&42_u128), Some(&"alpha"));
     assert_eq!(ring.get_node(&(7_u8, "tuple")), Some(&"alpha"));
@@ -118,7 +119,7 @@ fn different_hashable_key_types_are_supported() {
 #[test]
 fn zero_weight_is_rejected_without_adding_a_node() {
     let mut ring = ring();
-    assert!(ring.add_node("alpha", "a", 0).is_err());
+    assert!(ring.add_node(&"alpha", "a", 0).is_err());
     assert!(ring.is_empty());
     assert_eq!(ring.get_node(&0), None);
 }
@@ -126,7 +127,7 @@ fn zero_weight_is_rejected_without_adding_a_node() {
 #[test]
 fn valid_weight_is_accepted() {
     let mut ring = ring();
-    assert!(ring.add_node("alpha", "a", 3).is_ok());
+    assert!(ring.add_node(&"alpha", "a", 3).is_ok());
     assert_eq!(ring.get_node(&0), Some(&"alpha"));
 }
 
@@ -137,11 +138,11 @@ fn node_weights_set_the_number_of_virtual_nodes() {
         build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
     })
     .unwrap();
-    assert_eq!(ring.add_node("weak", "node_1", 1).unwrap(), "node_1");
+    assert_eq!(ring.add_node(&"weak", "node_1", 1).unwrap(), "node_1");
     assert_eq!(ring.len(), 10);
-    assert_eq!(ring.add_node("medium", "node_2", 2).unwrap(), "node_2");
+    assert_eq!(ring.add_node(&"medium", "node_2", 2).unwrap(), "node_2");
     assert_eq!(ring.len(), 30);
-    assert_eq!(ring.add_node("strong", "node_3", 5).unwrap(), "node_3");
+    assert_eq!(ring.add_node(&"strong", "node_3", 5).unwrap(), "node_3");
     assert_eq!(ring.len(), 80);
 }
 
@@ -158,9 +159,9 @@ fn repeated_lookup_is_deterministic() {
 fn insertion_order_does_not_change_ownership() {
     let forward = populated_ring();
     let mut reverse = ring();
-    reverse.add_node("gamma", "c", 1).unwrap();
-    reverse.add_node("beta", "b", 1).unwrap();
-    reverse.add_node("alpha", "a", 1).unwrap();
+    reverse.add_node(&"gamma", "c", 1).unwrap();
+    reverse.add_node(&"beta", "b", 1).unwrap();
+    reverse.add_node(&"alpha", "a", 1).unwrap();
 
     for key in keys() {
         assert_eq!(forward.get_node(&key), reverse.get_node(&key), "key {key}");
@@ -171,7 +172,7 @@ fn insertion_order_does_not_change_ownership() {
 fn adding_a_node_only_moves_keys_to_the_new_node() {
     let mut ring = populated_ring();
     let before: Vec<_> = keys().map(|key| *ring.get_node(&key).unwrap()).collect();
-    ring.add_node("delta", "d", 1).unwrap();
+    ring.add_node(&"delta", "d", 1).unwrap();
 
     for (key, old_owner) in keys().zip(before) {
         let new_owner = *ring.get_node(&key).unwrap();
@@ -207,7 +208,7 @@ fn removing_an_unknown_identifier_preserves_ownership() {
 #[test]
 fn removing_the_last_node_empties_the_ring() {
     let mut ring = ring();
-    ring.add_node("alpha", "a", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
     ring.remove_node("a");
     assert!(ring.is_empty());
     assert_eq!(ring.len(), 0);
@@ -221,8 +222,8 @@ fn removing_one_of_two_nodes_leaves_only_the_other_owner() {
         build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
     })
     .unwrap();
-    ring.add_node("alpha", "a", 1).unwrap();
-    ring.add_node("beta", "b", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
+    ring.add_node(&"beta", "b", 1).unwrap();
     assert_eq!(ring.len(), 20);
     ring.remove_node("a");
     assert_eq!(ring.len(), 10);
@@ -246,7 +247,7 @@ fn removing_and_readding_a_node_restores_ownership() {
     let mut ring = populated_ring();
     let before: Vec<_> = keys().map(|key| *ring.get_node(&key).unwrap()).collect();
     ring.remove_node("b");
-    ring.add_node("beta", "b", 1).unwrap();
+    ring.add_node(&"beta", "b", 1).unwrap();
     for (key, owner) in keys().zip(before) {
         assert_eq!(ring.get_node(&key), Some(&owner), "key {key}");
     }
@@ -309,7 +310,7 @@ fn changing_a_clone_does_not_change_the_original() {
 fn migration_preview_does_not_change_the_ring() {
     let ring = populated_ring();
     let before: Vec<_> = keys().map(|key| *ring.get_node(&key).unwrap()).collect();
-    let _ = ring.calculate_migration_on_add("delta", "d", 1);
+    let _ = ring.calculate_migration_on_add(&"delta", "d", 1);
     for (key, owner) in keys().zip(before) {
         assert_eq!(ring.get_node(&key), Some(&owner), "key {key}");
     }
@@ -318,7 +319,7 @@ fn migration_preview_does_not_change_the_ring() {
 #[test]
 fn migration_preview_only_transfers_to_the_added_node() {
     let ring = populated_ring();
-    let migrations = ring.calculate_migration_on_add("delta", "d", 1).unwrap();
+    let migrations = ring.calculate_migration_on_add(&"delta", "d", 1).unwrap();
     assert!(!migrations.is_empty());
     for migration in migrations {
         assert_ne!(migration.from_node, "delta");
@@ -333,18 +334,18 @@ fn migration_preview_keeps_existing_ring_size_and_addition_grows_it() {
         build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
     })
     .unwrap();
-    ring.add_node("alpha", "a", 1).unwrap();
-    ring.add_node("beta", "b", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
+    ring.add_node(&"beta", "b", 1).unwrap();
     assert_eq!(ring.len(), 10);
 
-    let migrations = ring.calculate_migration_on_add("gamma", "c", 1).unwrap();
+    let migrations = ring.calculate_migration_on_add(&"gamma", "c", 1).unwrap();
     assert!(!migrations.is_empty());
     assert!(migrations.iter().all(|migration| {
         migration.from_node != migration.to_node && migration.to_node == "gamma"
     }));
     assert_eq!(ring.len(), 10);
 
-    ring.add_node("gamma", "c", 1).unwrap();
+    ring.add_node(&"gamma", "c", 1).unwrap();
     assert_eq!(ring.len(), 15);
     assert!(ring.get_node(&"some_test_key_123").is_some());
 }
@@ -356,7 +357,7 @@ fn find_start_index_accepts_an_exact_virtual_node_hash() {
         build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
     })
     .unwrap();
-    ring.add_node("alpha", "a", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
     let virtual_hash = hash("a#virtual-node-0");
     assert_eq!(ring.find_start_index(virtual_hash), 0);
 }
@@ -368,7 +369,7 @@ fn find_start_index_wraps_after_the_last_virtual_node() {
         build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
     })
     .unwrap();
-    ring.add_node("alpha", "a", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
     let virtual_hash = hash("a#virtual-node-0");
     if virtual_hash < u64::MAX {
         assert_eq!(ring.find_start_index(u64::MAX), 0);
@@ -382,7 +383,7 @@ fn migration_range_wraps_from_the_previous_virtual_node() {
         build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
     })
     .unwrap();
-    ring.add_node("alpha", "a", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
     let old_hash = hash("a#virtual-node-0");
 
     let new_identifier = (0..10_000)
@@ -392,7 +393,7 @@ fn migration_range_wraps_from_the_previous_virtual_node() {
     let new_hash = hash(&format!("{new_identifier}#virtual-node-0"));
 
     let migrations = ring
-        .calculate_migration_on_add("beta", &new_identifier, 1)
+        .calculate_migration_on_add(&"beta", &new_identifier, 1)
         .unwrap();
     assert_eq!(migrations.len(), 1);
     assert_eq!(migrations[0].start_hash, old_hash);
@@ -404,8 +405,8 @@ fn migration_range_wraps_from_the_previous_virtual_node() {
 #[test]
 fn migration_preview_from_one_node_names_that_node_as_source() {
     let mut ring = ring();
-    ring.add_node("alpha", "a", 1).unwrap();
-    let migrations = ring.calculate_migration_on_add("beta", "b", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
+    let migrations = ring.calculate_migration_on_add(&"beta", "b", 1).unwrap();
     assert!(!migrations.is_empty());
     for migration in migrations {
         assert_eq!(migration.from_node, "alpha");
@@ -417,7 +418,7 @@ fn migration_preview_from_one_node_names_that_node_as_source() {
 fn migration_preview_of_an_empty_ring_has_no_source() {
     let ring = ring();
     assert!(
-        ring.calculate_migration_on_add("alpha", "a", 1)
+        ring.calculate_migration_on_add(&"alpha", "a", 1)
             .unwrap()
             .is_empty()
     );
@@ -426,7 +427,7 @@ fn migration_preview_of_an_empty_ring_has_no_source() {
 #[test]
 fn migration_preview_for_zero_weight_is_empty() {
     let ring = populated_ring();
-    assert!(ring.calculate_migration_on_add("delta", "d", 0).is_err());
+    assert!(ring.calculate_migration_on_add(&"delta", "d", 0).is_err());
 }
 
 #[test]
@@ -446,7 +447,7 @@ fn remove_preview_for_an_unknown_identifier_has_no_ranges() {
 #[test]
 fn remove_preview_of_the_last_node_has_no_destination() {
     let mut ring = ring();
-    ring.add_node("alpha", "a", 2).unwrap();
+    ring.add_node(&"alpha", "a", 2).unwrap();
     assert!(ring.calculate_migration_on_remove("a").is_empty());
     assert_eq!(ring.len(), 100);
 }
@@ -458,9 +459,9 @@ fn remove_preview_describes_the_keys_that_change_owner() {
         build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
     })
     .unwrap();
-    ring.add_node("alpha", "a", 2).unwrap();
-    ring.add_node("beta", "b", 1).unwrap();
-    ring.add_node("gamma", "c", 1).unwrap();
+    ring.add_node(&"alpha", "a", 2).unwrap();
+    ring.add_node(&"beta", "b", 1).unwrap();
+    ring.add_node(&"gamma", "c", 1).unwrap();
 
     let preview = ring.calculate_migration_on_remove("a");
     assert_eq!(preview.len(), 10);
@@ -495,8 +496,8 @@ fn remove_preview_uses_the_previous_token_across_the_ring_boundary() {
         build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
     })
     .unwrap();
-    ring.add_node("alpha", "a", 1).unwrap();
-    ring.add_node("beta", "b", 1).unwrap();
+    ring.add_node(&"alpha", "a", 1).unwrap();
+    ring.add_node(&"beta", "b", 1).unwrap();
 
     let ranges = ring.calculate_migration_on_remove("a");
     assert_eq!(ranges.len(), 1);
