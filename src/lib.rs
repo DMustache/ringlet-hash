@@ -3,27 +3,38 @@
 //! Each physical node is represented by `virtual_node_base_count * replica_multiplier`
 //! virtual nodes. Adding or removing a physical node generally changes the owner of
 //! only part of the key space. Use [`ConsistentRing::get_nodes`] when a key needs
-//! several distinct physical nodes.
+//! several distinct physical nodes. The multiplier is a relative placement
+//! weight, not a data replica count; `get_nodes` only selects owners and can
+//! return fewer than requested. Callers must check capacity, replica policy,
+//! and actual distribution.
 //!
 //! All processes that share a ring must use the same node identifiers, weights,
-//! [`BuildHasher`] implementation, and [`Hash`] representation for keys. Otherwise
-//! they may disagree about ownership.
+//! hash algorithm and seed, and [`Hash`] representation for keys and virtual
+//! node identifiers. Otherwise they may disagree about ownership. Do not use
+//! [`DefaultHasher`](std::collections::hash_map::DefaultHasher) for a shared or
+//! persisted ring: its algorithm and output are not guaranteed across Rust
+//! releases. [`Hash`] output is also not guaranteed across compiler versions or
+//! platforms. Keep those environments aligned, or use a separately specified
+//! encoding and hashing scheme for long-lived, cross-platform placement.
 //!
 //! [`ConsistentRing`] borrows each physical node and stores its identifier and
 //! weight once; virtual positions refer to those entries by index. The caller
 //! must keep node values alive while the ring uses them. [`ClusterManager`]
 //! provides checked membership changes over a ring.
 //!
+//! For background, see [Karger et al.'s original paper](https://people.csail.mit.edu/karger/Papers/web.pdf)
+//! and [Dynamo's discussion of virtual nodes and replica owners](https://www.amazon.science/publications/dynamo-amazons-highly-available-key-value-store).
+//!
 //! # Example
 //!
 //! ```
 //! extern crate ringlet_hash;
 //! use ringlet_hash::{ConsistentRing, RingError, RingConfig};
-//! use std::hash::{BuildHasherDefault, DefaultHasher};
+//! use xxhash_rust::xxh3::Xxh3Builder;
 //!
 //! let config = RingConfig {
 //!     virtual_node_base_count: 50,
-//!     build_hasher: BuildHasherDefault::<DefaultHasher>::default(),
+//!     build_hasher: Xxh3Builder::new().with_seed(0),
 //! };
 //! let server_a = String::from("server-a");
 //! let server_b = String::from("server-b");
@@ -100,9 +111,12 @@ pub struct TokenRangeMigration<T> {
 #[derive(Clone)]
 pub struct RingConfig<BH: BuildHasher> {
     /// Number of virtual nodes created for a physical node with weight 1.
-    /// Must be greater than zero.
+    /// Must be greater than zero. `50` is an illustrative starting point;
+    /// measure placement with representative keys and tune for your cluster.
     pub virtual_node_base_count: usize,
     /// Hash builder used for both keys and virtual node identifiers.
+    /// Use a named algorithm with a fixed seed for shared or persisted rings;
+    /// `DefaultHasher` has no stable output guarantee across Rust releases.
     pub build_hasher: BH,
 }
 
@@ -161,6 +175,9 @@ impl<'a, T, BH: BuildHasher> ConsistentRing<'a, T, BH> {
     /// Adds a physical node and returns its identifier.
     ///
     /// The node gets `virtual_node_base_count * replica_multiplier` positions.
+    /// The multiplier is a relative placement weight, not a replica count;
+    /// the caller must decide whether it matches the node's actual capacity.
+    /// The product is not checked for overflow or capped for memory use.
     /// Returns [`RingError::NodeAlreadyExists`] for a duplicate identifier and
     /// [`RingError::ZeroWeight`] for a zero multiplier.
     pub fn add_node(
@@ -263,6 +280,7 @@ impl<'a, T, BH: BuildHasher> ConsistentRing<'a, T, BH> {
     /// The first result is the primary owner returned by [`get_node`](Self::get_node).
     /// The result is empty for an empty ring or a zero count, and may contain
     /// fewer than `count` nodes when the ring has fewer distinct identifiers.
+    /// The caller must check the returned length and store any desired copies.
     pub fn get_nodes<K: Hash>(&self, key: &K, count: usize) -> Vec<&'a T> {
         if self.is_empty() || count == 0 {
             return Vec::new();

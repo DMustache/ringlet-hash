@@ -1,14 +1,12 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use ringlet_hash::{ConsistentRing, RingConfig};
-use std::{
-    hash::{BuildHasherDefault, DefaultHasher},
-    hint::black_box,
-};
+use std::hint::black_box;
+use xxhash_rust::xxh3::Xxh3Builder;
 
 fn bench_ring_lookup(c: &mut Criterion) {
     let config = RingConfig {
         virtual_node_base_count: 1_000,
-        build_hasher: BuildHasherDefault::<DefaultHasher>::new(),
+        build_hasher: Xxh3Builder::new().with_seed(0),
     };
     let mut ring = ConsistentRing::try_new(config).unwrap();
 

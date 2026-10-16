@@ -11,12 +11,12 @@ use crate::{ConsistentRing, PhysicalRingNode, RingConfig, RingError, TokenRangeM
 /// # Example
 ///
 /// ```
-/// use std::hash::{BuildHasherDefault, DefaultHasher};
+/// use xxhash_rust::xxh3::Xxh3Builder;
 /// use ringlet_hash::{ClusterManager, RingConfig};
 ///
 /// let mut cluster = ClusterManager::try_new(RingConfig {
 ///     virtual_node_base_count: 50,
-///     build_hasher: BuildHasherDefault::<DefaultHasher>::default(),
+///     build_hasher: Xxh3Builder::new().with_seed(0),
 /// })?;
 ///
 /// let server_a = String::from("server-a");
@@ -59,6 +59,8 @@ impl<'a, T, BH: BuildHasher> ClusterManager<'a, T, BH> {
 
     /// Adds a physical node with the given identifier and replica multiplier.
     ///
+    /// The multiplier is a relative placement weight, not a replica count.
+    /// The caller must choose a weight that reflects the node's capacity.
     /// Returns [`RingError::NodeAlreadyExists`] for a duplicate identifier or
     /// [`RingError::ZeroWeight`] for a zero multiplier.
     pub fn add_node(
@@ -130,6 +132,7 @@ impl<'a, T, BH: BuildHasher> ClusterManager<'a, T, BH> {
     }
 
     /// Returns up to `count` distinct physical owners for `key`.
+    /// The caller must check the returned length and store any desired copies.
     pub fn get_nodes<K: Hash>(&self, key: &K, count: usize) -> Vec<&'a T> {
         self.ring.get_nodes(key, count)
     }

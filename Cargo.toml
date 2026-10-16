@@ -1,6 +1,6 @@
 [package]
 name = "ringlet-hash"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 authors = ["Dmitry Usakov"]
 description = "Consistent hashing with weighted nodes and cluster migration previews"
@@ -16,6 +16,7 @@ license = "MIT OR Apache-2.0"
 [dev-dependencies]
 murmur3 = "0.5.2"
 criterion = "0.8.2"
+xxhash-rust = { version = "=0.8.16", features = ["xxh3"] }
 
 [[bench]]
 name = "ring_bench"
